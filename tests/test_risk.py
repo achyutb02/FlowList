@@ -88,6 +88,17 @@ class Limits(unittest.TestCase):
         self.assertEqual(r["verdict"], "PASS")
         self.assertTrue(r["warnings"])
 
+    def test_an_option_contract_is_valued_at_100_shares(self):
+        opt = {"symbol": "BAC261120C00052000", "side": "buy", "qty": "1", "type": "limit",
+               "limit_price": "0.76", "time_in_force": "day"}
+        r = self.one(opt, allow_options=True)
+        self.assertEqual(r["value_usd"], 76.0)
+        r = self.one(opt, allow_options=True, max_option_usd=35)
+        self.assertEqual(r["verdict"], "BLOCK")
+        self.assertIn("max per option trade", " ".join(r["reasons"]))
+        cheap = dict(opt, limit_price="0.35")
+        self.assertEqual(self.one(cheap, allow_options=True, max_option_usd=35)["verdict"], "PASS")
+
     def test_crypto_and_junk_symbols(self):
         crypto = {"symbol": "BTC/USD", "side": "buy", "notional": "50", "type": "market", "time_in_force": "day"}
         self.assertIn("stocks and ETFs only", " ".join(self.one(crypto)["reasons"]))

@@ -1,0 +1,4 @@
+# Live account data the skills write while trading; only trader/config.json is tracked
+trader/*
+!trader/config.json
+__pycache__/

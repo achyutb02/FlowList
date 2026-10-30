@@ -19,7 +19,8 @@ What blocks an order:
   asset         options (OCC symbols) unless "allow_options": true; crypto
                 and anything that is not a stock or ETF
   blocked       a ticker on your "blocked" list
-  size          under min_order_usd, over max_order_usd
+  size          under min_order_usd, over max_order_usd; an option buy over
+                max_option_usd (options are valued at qty x price x 100)
   position      the stock would be over max_position_pct of the account
   cash          the buy would dip into your cash buffer, or need margin
   short         selling more than you hold, unless "allow_short": true
@@ -43,7 +44,7 @@ import sys
 DEFAULTS = {
     "budget": None, "cash_buffer_pct": 10, "max_position_pct": 25, "max_order_usd": 2000,
     "min_order_usd": 5, "max_orders_per_day": 10, "paper": True, "blocked": [],
-    "allow_options": False, "allow_margin": False, "allow_short": False,
+    "allow_options": False, "allow_margin": False, "allow_short": False, "max_option_usd": None,
 }
 ALPACA_FIELDS = ("symbol", "side", "qty", "notional", "type", "time_in_force", "limit_price",
                  "stop_price", "trail_price", "trail_percent", "extended_hours", "client_order_id",
@@ -154,6 +155,8 @@ def check(orders, cfg, portfolio=None, prices=None, state=None, today=None):
         tif = str(o.get("time_in_force", "day")).strip().lower()
         qty, notional = o.get("qty"), o.get("notional")
         value = None
+        is_option = bool(sym and OCC.match(sym.replace(" ", "")))
+        mult = float(o.get("multiplier") or 100) if is_option else 1.0
 
         # format
         if not sym:
@@ -187,12 +190,12 @@ def check(orders, cfg, portfolio=None, prices=None, state=None, today=None):
                          % (o.get("order_class") or "advanced_instructions"))
 
         # asset
-        if sym and OCC.match(sym.replace(" ", "")):
+        if is_option:
             if not c.get("allow_options"):
                 reasons.append("asset: %s is an option contract; options are off "
                                "(\"allow_options\": false)" % sym)
             else:
-                warns.append("option order: options can lose 100%% of what you pay")
+                warns.append("option order: options can lose 100% of what you pay")
         elif sym and ("/" in sym or not TICKER.match(sym)):
             reasons.append("asset: %s does not look like a US stock or ETF ticker; "
                            "this pack trades stocks and ETFs only" % sym)
@@ -213,7 +216,7 @@ def check(orders, cfg, portfolio=None, prices=None, state=None, today=None):
             value = _f(notional)
         elif qty is not None and _f(qty):
             if ref:
-                value = _f(qty) * ref
+                value = _f(qty) * ref * mult
             else:
                 reasons.append("price: no price for %s to size a %s-share order; add it to "
                                "trader/prices.json (trader-alerts: alerts.py quote %s --write)"
@@ -226,6 +229,10 @@ def check(orders, cfg, portfolio=None, prices=None, state=None, today=None):
             if c.get("max_order_usd") and value > float(c["max_order_usd"]) + CENT:
                 reasons.append("size: %s is over your %s max order"
                                % (money(value), money(c["max_order_usd"])))
+            if (is_option and side == "buy" and c.get("max_option_usd")
+                    and value > float(c["max_option_usd"]) + CENT):
+                reasons.append("size: %s of options is over your %s max per option trade"
+                               % (money(value), money(c["max_option_usd"])))
 
         # account effects, simulated in order
         cash = acct["cash"]
@@ -277,17 +284,17 @@ def check(orders, cfg, portfolio=None, prices=None, state=None, today=None):
                 acct["cash"] -= value
                 acct["values"][sym] = acct["values"].get(sym, 0.0) + value
                 if ref:
-                    acct["shares"][sym] = held + value / ref
+                    acct["shares"][sym] = held + value / (ref * mult)
             else:
                 acct["cash"] += value
                 acct["values"][sym] = max(acct["values"].get(sym, 0.0) - value, 0.0)
                 if qty is not None:
                     acct["shares"][sym] = held - _f(qty)
                 elif ref:
-                    acct["shares"][sym] = held - value / ref
+                    acct["shares"][sym] = held - value / (ref * mult)
         results.append({
             "index": i, "symbol": sym, "side": side,
-            "amount": money(_f(notional) or 0) if notional is not None else ("%s shares" % qty),
+            "amount": money(_f(notional) or 0) if notional is not None else ("%s %s" % (qty, "contracts" if is_option else "shares")),
             "value_usd": round(value, 2) if value is not None else None,
             "fingerprint": fingerprint(o), "verdict": verdict,
             "reasons": reasons, "warnings": warns,
