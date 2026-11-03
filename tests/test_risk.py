@@ -99,6 +99,15 @@ class Limits(unittest.TestCase):
         cheap = dict(opt, limit_price="0.35")
         self.assertEqual(self.one(cheap, allow_options=True, max_option_usd=35)["verdict"], "PASS")
 
+    def test_a_held_option_counts_100_shares_toward_the_account(self):
+        port = {"cash": 130.31, "positions": [{"ticker": "VALE261218C00012000", "shares": 1}]}
+        prices = {"VALE261218C00012000": 0.22, "NOW": 109.15}
+        order = {"symbol": "NOW", "side": "buy", "qty": "1", "type": "limit",
+                 "limit_price": "109.50", "time_in_force": "day"}
+        res = check.check([order], cfg(max_order_usd=110, max_position_pct=75),
+                          portfolio=port, prices=prices, today=TODAY)
+        self.assertEqual(verdicts(res), ["PASS"])
+
     def test_crypto_and_junk_symbols(self):
         crypto = {"symbol": "BTC/USD", "side": "buy", "notional": "50", "type": "market", "time_in_force": "day"}
         self.assertIn("stocks and ETFs only", " ".join(self.one(crypto)["reasons"]))

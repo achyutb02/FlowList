@@ -114,7 +114,9 @@ def account(cfg, portfolio, prices):
             n = sum(_f(l.get("shares")) or 0 for l in p.get("lots", []))
         shares[t] = shares.get(t, 0) + n
         if prices.get(t):
-            values[t] = shares[t] * prices[t]
+            mult = (float(p.get("multiplier") or 100)
+                    if OCC.match(t.replace(" ", "")) else 1.0)
+            values[t] = shares[t] * prices[t] * mult
         else:
             basis = sum(_f(l.get("cost")) or 0 for l in p.get("lots", []))
             values[t] = basis
