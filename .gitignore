@@ -2,3 +2,6 @@
 trader/*
 !trader/config.json
 __pycache__/
+
+# Personal Claude Code settings (holds the SEC contact email; never commit)
+.claude/settings.local.json
