@@ -58,3 +58,17 @@ Every Friday evening: closed trades, win rate, average win against average
 loss, and fills missed. The plan is working when the average win is at least
 1.5 times the average loss. A handful of closed trades is too few to prove
 an edge; the scorecard is how we find out.
+
+## Autopilot (standing permission from the owner, Nov 9, 2026)
+
+The owner is not always online and gave standing permission to enter and exit
+trades without asking each time. The agent acts on its own only inside these
+limits, and reports every action as soon as it is done:
+
+- Only trades that follow this playbook and PASS `trader-risk/check.py`.
+- Single-leg options or whole shares only. Two-leg spreads cannot be placed by the agent, so they are proposed, never auto-entered.
+- At most 2 new positions a day, at most $40 at risk on each new option, all options at or under 50% of the account, max order $110.
+- Every buy gets its GTC stop right after the fill. Stops follow the exit ladder and are only ever raised.
+- Pause rule: if the account is down 10% in a day, or 15% from its high, no new entries until the owner checks in. Exits and stop raises continue.
+- No margin, no short sales, no money moved in or out.
+- The owner can end autopilot at any time by saying "stop autopilot".
