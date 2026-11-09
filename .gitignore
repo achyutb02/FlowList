@@ -1,6 +1,7 @@
-# Live account data the skills write while trading; only trader/config.json is tracked
+# Live account data the skills write while trading; only the rules are tracked
 trader/*
 !trader/config.json
+!trader/STRATEGY.md
 __pycache__/
 
 # Personal Claude Code settings (holds the SEC contact email; never commit)

@@ -12,5 +12,10 @@
   "blocked": [],
   "allow_options": true,
   "allow_margin": false,
-  "allow_short": false
+  "allow_short": false,
+  "option_min_days_to_expiry": 21,
+  "option_max_spread_pct": 15,
+  "option_min_open_interest": 500,
+  "option_delta_min": 0.25,
+  "option_delta_max": 0.6
 }

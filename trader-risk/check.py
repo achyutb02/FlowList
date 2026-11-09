@@ -21,6 +21,15 @@ What blocks an order:
   blocked       a ticker on your "blocked" list
   size          under min_order_usd, over max_order_usd; an option buy over
                 max_option_usd (options are valued at qty x price x 100)
+  option gates  for an option BUY, each one only when set in the config:
+                expiry sooner than option_min_days_to_expiry (read from the
+                OCC symbol); a bid/ask wider than option_max_spread_pct of the
+                middle; open interest under option_min_open_interest; delta
+                outside option_delta_min .. option_delta_max. The live numbers
+                ride on the order: "quote": {"bid", "ask", "open_interest",
+                "delta"}. A missing number a gate needs blocks the order.
+                A limit under the middle of the market only warns: it will
+                probably not fill.
   position      the stock would be over max_position_pct of the account
   cash          the buy would dip into your cash buffer, or need margin
   short         selling more than you hold, unless "allow_short": true
@@ -45,6 +54,8 @@ DEFAULTS = {
     "budget": None, "cash_buffer_pct": 10, "max_position_pct": 25, "max_order_usd": 2000,
     "min_order_usd": 5, "max_orders_per_day": 10, "paper": True, "blocked": [],
     "allow_options": False, "allow_margin": False, "allow_short": False, "max_option_usd": None,
+    "option_min_days_to_expiry": None, "option_max_spread_pct": None,
+    "option_min_open_interest": None, "option_delta_min": None, "option_delta_max": None,
 }
 ALPACA_FIELDS = ("symbol", "side", "qty", "notional", "type", "time_in_force", "limit_price",
                  "stop_price", "trail_price", "trail_percent", "extended_hours", "client_order_id",
@@ -53,6 +64,7 @@ ALPACA_FIELDS = ("symbol", "side", "qty", "notional", "type", "time_in_force", "
 TYPES = {"market", "limit", "stop", "stop_limit", "trailing_stop"}
 TIFS = {"day", "gtc", "opg", "cls", "ioc", "fok"}
 OCC = re.compile(r"^[A-Z]{1,6}\d{6}[CP]\d{8}$")
+OCC_DATE = re.compile(r"^[A-Z]{1,6}(\d{2})(\d{2})(\d{2})[CP]\d{8}$")
 TICKER = re.compile(r"^[A-Z]{1,5}([.\-][A-Z]{1,2})?$")
 CENT = 0.005
 
@@ -122,6 +134,78 @@ def account(cfg, portfolio, prices):
             values[t] = basis
             warnings.append("no price for %s: valued at its cost basis %s" % (t, money(basis)))
     return {"cash": cash, "shares": shares, "values": values}, warnings
+
+
+def option_expiry(sym):
+    """Expiry date written in an OCC option symbol (VALE261218C00012000 -> 2026-12-18)."""
+    m = OCC_DATE.match(str(sym).replace(" ", "").upper())
+    if not m:
+        return None
+    try:
+        return datetime.date(2000 + int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def option_gates(order, sym, cfg, today):
+    """Entry rules for an option BUY. Each gate is off until its config key is
+    set. The live quote rides on the order: "quote": {"bid", "ask",
+    "open_interest", "delta"}. Returns (reasons that block, warnings)."""
+    reasons, warns = [], []
+    min_days = cfg.get("option_min_days_to_expiry")
+    if min_days is not None:
+        exp = option_expiry(sym)
+        if exp is None:
+            reasons.append("expiry: cannot read the expiry date in %s" % sym)
+        else:
+            left = (exp - datetime.date.fromisoformat(today)).days
+            if left < int(min_days):
+                reasons.append("expiry: %s expires in %d days, under your %d-day minimum"
+                               % (sym, left, int(min_days)))
+    q = order.get("quote") or {}
+    bid, ask = _f(q.get("bid")), _f(q.get("ask"))
+    two_sided = bid is not None and ask is not None and 0 <= bid <= ask and ask > 0
+    mid = (bid + ask) / 2.0 if two_sided else None
+
+    max_spread = cfg.get("option_max_spread_pct")
+    if max_spread is not None:
+        if not two_sided:
+            reasons.append("quote: put the live bid and ask on the order "
+                           "(\"quote\": {\"bid\": ..., \"ask\": ...}) so the spread can be checked")
+        else:
+            wide = 100.0 * (ask - bid) / mid
+            if wide > float(max_spread) + 1e-9:
+                reasons.append("liquidity: bid $%.2f / ask $%.2f is %.0f%% of the middle, over your "
+                               "%s%% limit; a market this wide costs too much to get in and out of"
+                               % (bid, ask, wide, _pct(max_spread)))
+    min_oi = cfg.get("option_min_open_interest")
+    if min_oi is not None:
+        oi = _f(q.get("open_interest"))
+        if oi is None:
+            reasons.append("quote: put the open interest on the order (\"quote\": {\"open_interest\": ...})")
+        elif oi < float(min_oi):
+            reasons.append("liquidity: open interest %d is under your %d minimum" % (oi, int(min_oi)))
+    lo, hi = cfg.get("option_delta_min"), cfg.get("option_delta_max")
+    if lo is not None or hi is not None:
+        delta = _f(q.get("delta"))
+        if delta is None:
+            reasons.append("quote: put the delta on the order (\"quote\": {\"delta\": ...})")
+        else:
+            d = abs(delta)
+            if lo is not None and d < float(lo) - 1e-9:
+                reasons.append("odds: delta %.2f is under your %.2f minimum (a long shot)" % (d, float(lo)))
+            if hi is not None and d > float(hi) + 1e-9:
+                reasons.append("odds: delta %.2f is over your %.2f maximum" % (d, float(hi)))
+
+    limit = _f(order.get("limit_price"))
+    if two_sided and limit is not None:
+        if limit < mid - CENT:
+            warns.append("fill: your $%.2f limit is under the $%.3f middle of the market (bid $%.2f, "
+                         "ask $%.2f); it will probably not fill. Bid the middle or a cent or two over"
+                         % (limit, mid, bid, ask))
+        elif limit > ask + CENT:
+            warns.append("fill: your $%.2f limit is over the $%.2f ask; you would overpay" % (limit, ask))
+    return reasons, warns
 
 
 def placed_today(state, today):
@@ -198,6 +282,10 @@ def check(orders, cfg, portfolio=None, prices=None, state=None, today=None):
                                "(\"allow_options\": false)" % sym)
             else:
                 warns.append("option order: options can lose 100% of what you pay")
+                if side == "buy":
+                    gate_reasons, gate_warns = option_gates(o, sym.replace(" ", ""), c, today)
+                    reasons.extend(gate_reasons)
+                    warns.extend(gate_warns)
         elif sym and ("/" in sym or not TICKER.match(sym)):
             reasons.append("asset: %s does not look like a US stock or ETF ticker; "
                            "this pack trades stocks and ETFs only" % sym)

@@ -50,6 +50,7 @@ batch that is fine order by order but breaks a rule together is caught.
 | asset | an option symbol while `allow_options` is false; crypto or anything that is not a US stock or ETF ticker |
 | blocked | the ticker is on the `blocked` list |
 | size | under `min_order_usd` or over `max_order_usd` |
+| option gates | an option buy, each gate only when set in the config: expiry sooner than `option_min_days_to_expiry` (read from the OCC symbol); bid/ask wider than `option_max_spread_pct` of the middle; open interest under `option_min_open_interest`; delta outside `option_delta_min` to `option_delta_max`. Put the live numbers on the order: `"quote": {"bid", "ask", "open_interest", "delta"}`. A number a gate needs but is missing blocks the order |
 | position | the stock would be over `max_position_pct` of the account after the fill |
 | cash | the buy would leave less than the cash buffer, or need margin (`allow_margin` false) |
 | short | a sell of more than you hold (`allow_short` false) |
@@ -57,7 +58,8 @@ batch that is fine order by order but breaks a rule together is caught.
 | daily limit | more than `max_orders_per_day` placed today |
 
 Warnings do not block, but say them to the user: a LIVE account, a number
-sent as a number instead of a string, an advanced (bracket) order.
+sent as a number instead of a string, an advanced (bracket) order, an
+option limit under the middle of the bid and ask (it will probably not fill).
 
 ## Steps
 

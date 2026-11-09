@@ -108,6 +108,55 @@ class Limits(unittest.TestCase):
                           portfolio=port, prices=prices, today=TODAY)
         self.assertEqual(verdicts(res), ["PASS"])
 
+    def test_option_gates_are_off_until_set(self):
+        opt = {"symbol": "VALE261218C00012000", "side": "buy", "qty": "1", "type": "limit",
+               "limit_price": "0.30", "time_in_force": "day"}
+        self.assertEqual(self.one(opt, allow_options=True)["verdict"], "PASS")
+
+    def test_option_gates_block_bad_entries(self):
+        gates = dict(allow_options=True, option_min_days_to_expiry=21, option_max_spread_pct=15,
+                     option_min_open_interest=500, option_delta_min=0.25, option_delta_max=0.6)
+        good_q = {"bid": "0.36", "ask": "0.40", "open_interest": 1200, "delta": 0.38}
+
+        def opt(sym="VALE261218C00012000", limit="0.38", quote=good_q, side="buy"):
+            o = {"symbol": sym, "side": side, "qty": "1", "type": "limit",
+                 "limit_price": limit, "time_in_force": "day"}
+            if quote is not None:
+                o["quote"] = quote
+            return o
+
+        self.assertEqual(self.one(opt(), **gates)["verdict"], "PASS")
+        # TODAY is 2026-10-13: an Oct 30 expiry is 17 days away
+        self.assertIn("expires in 17 days", " ".join(self.one(opt(sym="VALE261030C00012000"), **gates)["reasons"]))
+        wide = dict(good_q, bid="0.24", ask="0.43")
+        self.assertIn("liquidity: bid $0.24 / ask $0.43", " ".join(self.one(opt(quote=wide), **gates)["reasons"]))
+        thin = dict(good_q, open_interest=137)
+        self.assertIn("open interest 137", " ".join(self.one(opt(quote=thin), **gates)["reasons"]))
+        longshot = dict(good_q, delta=0.08)
+        self.assertIn("long shot", " ".join(self.one(opt(quote=longshot), **gates)["reasons"]))
+        put = dict(good_q, delta=-0.35)
+        self.assertEqual(self.one(opt(sym="VALE261218P00011000", quote=put), **gates)["verdict"], "PASS")
+        self.assertIn("put the live bid and ask", " ".join(self.one(opt(quote=None), **gates)["reasons"]))
+
+    def test_a_limit_under_the_middle_warns_it_will_not_fill(self):
+        opt = {"symbol": "KGC261218C00022000", "side": "buy", "qty": "1", "type": "limit",
+               "limit_price": "0.30", "time_in_force": "day",
+               "quote": {"bid": "0.24", "ask": "0.43"}}
+        r = self.one(opt, allow_options=True)
+        self.assertEqual(r["verdict"], "PASS")
+        self.assertIn("will probably not fill", " ".join(r["warnings"]))
+        at_mid = dict(opt, limit_price="0.34")
+        self.assertNotIn("not fill", " ".join(self.one(at_mid, allow_options=True)["warnings"]))
+
+    def test_option_gates_do_not_touch_sells(self):
+        port = {"cash": 100, "positions": [{"ticker": "VALE261030C00012000", "shares": 1}]}
+        stop = {"symbol": "VALE261030C00012000", "side": "sell", "qty": "1", "type": "stop_limit",
+                "stop_price": "0.35", "limit_price": "0.32", "time_in_force": "gtc"}
+        res = check.check([stop], cfg(allow_options=True, option_min_days_to_expiry=21,
+                                      option_max_spread_pct=15, min_order_usd=0),
+                          portfolio=port, prices={"VALE261030C00012000": 0.5}, today=TODAY)
+        self.assertEqual(verdicts(res), ["PASS"])
+
     def test_crypto_and_junk_symbols(self):
         crypto = {"symbol": "BTC/USD", "side": "buy", "notional": "50", "type": "market", "time_in_force": "day"}
         self.assertIn("stocks and ETFs only", " ".join(self.one(crypto)["reasons"]))
