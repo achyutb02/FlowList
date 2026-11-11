@@ -45,6 +45,14 @@ Weak points, biggest first:
 
 A stop is never lowered.
 
+**Gap rule (added Nov 10, 2026).** A stop-limit cannot protect against an
+overnight gap: if the option opens below the stop's limit price, the sell
+order just sits above the market. Treat the stop as hit. At the first check
+after the open, cancel the stop, confirm it is cancelled, and sell at the
+middle. Do not wait for a bounce, and do not replace it with a lower stop.
+Because a gap can skip any stop, size every bet so that losing all of it is
+acceptable.
+
 ## Risk
 
 - Each bet can lose at most $40. All open options together stay at or under 50% of the account.
