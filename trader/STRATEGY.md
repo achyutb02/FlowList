@@ -2,7 +2,7 @@
 
 Written Nov 9, 2026 after a review of every order since Oct 27. The rules in
 `trader/config.json` are enforced by `trader-risk/check.py`; the rest is the
-routine every report follows. Every order still needs the owner's yes.
+routine every report follows. Orders follow the autopilot section below.
 
 ## What the review found
 
@@ -77,6 +77,7 @@ limits, and reports every action as soon as it is done:
 - Single-leg options or whole shares only. Two-leg spreads cannot be placed by the agent, so they are proposed, never auto-entered.
 - At most 2 new positions a day, at most $40 at risk on each new option, all options at or under 50% of the account, max order $110.
 - Every buy gets its GTC stop right after the fill. Stops follow the exit ladder and are only ever raised.
-- Pause rule: if the account is down 10% in a day, or 15% from its high, no new entries until the owner checks in. Exits and stop raises continue.
+- Pause rule: if the account is down 10% in a day, no new entries for the rest of that day. If it is 15% or more below its high, no new entries that day, and every later new bet is $25 or less until the account is back above that line. Exits and stop raises always continue.
+- Never ask the owner (owner, Nov 10, 2026: "You are in autopilot, don't ask me"). Decide and act inside these limits, then report what was done.
 - No margin, no short sales, no money moved in or out.
 - The owner can end autopilot at any time by saying "stop autopilot".
