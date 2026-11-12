@@ -60,6 +60,22 @@ acceptable.
 - After two losing trades in a row, the next bet is $25 or less until a win.
 - Max order $110. No margin, no short sales.
 
+## Shares route (added Nov 12, 2026)
+
+Most turn setups fail on the option rules (wide markets, thin open interest,
+premium over $0.40), so cash sat idle (about 79% of the account). Whole shares
+are already allowed under autopilot and have no spread or open-interest
+problem. A turn that passes the Entry rule 3 but has no option that passes the
+gates may be bought as whole shares instead:
+
+- Same turn rule (RSI was under 35 in the last 5 sessions and is rising, price above yesterday's high or its 5-day average; mirror for shorts is not allowed, so no shares on the put side).
+- Stock $5 to $35, market cap over $5B, no earnings before the planned exit.
+- Size: at most 50% of the account in the shares, max order $110, loss to the stop at most $40 (in practice the stop is about 5% under the entry).
+- GTC stop-limit placed right after the fill, about 5% under the fill, limit 10 cents under. Stops only move up.
+- Exit: at +10% raise the stop to the entry price; at +20% sell; if not up 5% after 10 trading days, sell.
+- Gap rule applies: if the stock opens under the stop's limit, sell at the first check.
+- Overseas-news stocks (ADRs of Brazil, China, Taiwan firms) keep the same size cap; the gap risk is accepted because the loss is small.
+
 ## Scorecard
 
 Every Friday evening: closed trades, win rate, average win against average
